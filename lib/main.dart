@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'services/app_config.dart';
+import 'services/claude_cli_service.dart';
 import 'screens/setup_screen.dart';
 import 'screens/welcome_screen.dart';
 
@@ -11,9 +12,16 @@ Future<void> main() async {
 }
 
 class DevSphereApp extends StatefulWidget {
-  const DevSphereApp({super.key, required this.config});
+  const DevSphereApp({
+    super.key,
+    required this.config,
+    this.cli = const ClaudeCliService(),
+  });
 
   final AppConfig config;
+
+  /// Injectable so tests can supply a fake instead of shelling out to `claude`.
+  final ClaudeCliService cli;
 
   @override
   State<DevSphereApp> createState() => _DevSphereAppState();
@@ -44,6 +52,7 @@ class _DevSphereAppState extends State<DevSphereApp> {
     }
     return WelcomeScreen(
       config: widget.config,
+      cli: widget.cli,
       onSignOut: () => setState(() {}),
     );
   }

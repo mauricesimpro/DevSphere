@@ -17,7 +17,17 @@ codebase.
 - **Remembers you** — your name is persisted locally (via `shared_preferences`),
   so subsequent launches skip setup and go straight to the greeting.
 - **Sign out** — clears the stored config and returns you to setup.
+- **Jira connect login** — enter your Jira site URL, email, and an API token;
+  DevSphere verifies them against Jira's `/rest/api/3/myself` and remembers the
+  connection (with a disconnect option).
+- **Google session checker** — paste a Google OAuth access token and DevSphere
+  validates it against Google's tokeninfo endpoint, reporting the account,
+  scopes, and time remaining.
 - **Cross-platform** — same code builds for desktop, web, and mobile.
+
+> Note: the Jira check calls the Atlassian REST API directly. On the **web**
+> build this can be blocked by Atlassian's CORS policy; it works from the
+> desktop/mobile builds. The Google check works everywhere.
 
 ---
 
@@ -134,9 +144,13 @@ lib/
   main.dart                     App entry; routes to setup vs. welcome
   services/
     app_config.dart             Load / save / reset the saved name
+    jira_service.dart           Jira connect/verify/disconnect + persistence
+    google_auth_service.dart    Validate a Google token (tokeninfo)
   screens/
     setup_screen.dart           First-run form
-    welcome_screen.dart         "Hi {name}" + Sign out
+    welcome_screen.dart         "Hi {name}" dashboard + Sign out
+    jira_connect_screen.dart    Jira login form / connected view
+    google_session_screen.dart  Google session checker
 resources/
   devsphere.svg                 App icon
 install.sh                      Build + install (or --uninstall) on Linux

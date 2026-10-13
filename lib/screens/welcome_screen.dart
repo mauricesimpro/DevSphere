@@ -1,49 +1,27 @@
 import 'package:flutter/material.dart';
 
 import '../services/app_config.dart';
+import '../services/claude_cli_service.dart';
 import '../services/jira_service.dart';
 import '../services/google_auth_service.dart';
-import 'jira_connect_screen.dart';
-import 'google_session_screen.dart';
+import 'connection_check_screen.dart';
 
-/// The home dashboard, shown on every run after setup. Greets the configured
-/// user and surfaces the Jira connection and Google session checker. A
-/// "Sign out" action clears the saved config via [onSignOut].
-class WelcomeScreen extends StatefulWidget {
+/// Home dashboard shown after setup. Greets the user and offers connection
+/// checks for Jira and Google that piggyback on the local Claude CLI — no
+/// tokens are stored or entered anywhere. "Sign out" clears the saved config.
+class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({
     super.key,
     required this.config,
     required this.onSignOut,
+    this.cli = const ClaudeCliService(),
   });
 
   final AppConfig config;
   final VoidCallback onSignOut;
+  final ClaudeCliService cli;
 
-  @override
-  State<WelcomeScreen> createState() => _WelcomeScreenState();
-}
-
-class _WelcomeScreenState extends State<WelcomeScreen> {
-  JiraService? _jira;
-  GoogleAuthService? _google;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadServices();
-  }
-
-  Future<void> _loadServices() async {
-    final jira = await JiraService.load();
-    final google = await GoogleAuthService.load();
-    if (!mounted) return;
-    setState(() {
-      _jira = jira;
-      _google = google;
-    });
-  }
-
-  Future<void> _confirmSignOut() async {
+  Future<void> _confirmSignOut(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -66,27 +44,50 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     );
 
     if (confirmed == true) {
-      await widget.config.reset();
-      widget.onSignOut();
+      await config.reset();
+      onSignOut();
     }
   }
 
-  Future<void> _openJira() async {
-    final jira = _jira;
-    if (jira == null) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => JiraConnectScreen(service: jira)),
-    );
-    if (mounted) setState(() {}); // refresh status on return
+  void _openJira(BuildContext context) {
+    final jira = JiraService(cli);
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ConnectionCheckScreen(
+        title: 'Jira',
+        icon: Icons.dashboard_outlined,
+        description:
+            'Checks your Atlassian connection through the Claude CLI '
+            '(atlassianUserInfo) — no token needed.',
+        check: () async {
+          final account = await jira.checkConnection();
+          return [
+            MapEntry('Name', account.displayName),
+            if (account.email != null) MapEntry('Email', account.email!),
+            if (account.accountId != null) MapEntry('Account', account.accountId!),
+          ];
+        },
+      ),
+    ));
   }
 
-  Future<void> _openGoogle() async {
-    final google = _google;
-    if (google == null) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => GoogleSessionScreen(service: google)),
-    );
-    if (mounted) setState(() {});
+  void _openGoogle(BuildContext context) {
+    final google = GoogleAuthService(cli);
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ConnectionCheckScreen(
+        title: 'Google',
+        icon: Icons.account_circle_outlined,
+        description:
+            'Checks your Google session through the Claude CLI '
+            '(Calendar/Gmail connectors) — no token needed.',
+        check: () async {
+          final account = await google.checkConnection();
+          return [
+            MapEntry('Account', account.email),
+            if (account.via != null) MapEntry('Via', account.via!),
+          ];
+        },
+      ),
+    ));
   }
 
   @override
@@ -100,7 +101,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           IconButton(
             tooltip: 'Sign out',
             icon: const Icon(Icons.logout),
-            onPressed: _confirmSignOut,
+            onPressed: () => _confirmSignOut(context),
           ),
         ],
       ),
@@ -111,10 +112,10 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
             padding: const EdgeInsets.all(24),
             children: [
               const SizedBox(height: 8),
-              Text('Hi ${widget.config.name}', style: theme.textTheme.displaySmall),
+              Text('Hi ${config.name}', style: theme.textTheme.displaySmall),
               const SizedBox(height: 4),
               Text(
-                'Connections',
+                'Connections — checked live via your Claude CLI',
                 style: theme.textTheme.titleSmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -123,21 +124,15 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               _ConnectionCard(
                 icon: Icons.dashboard_outlined,
                 title: 'Jira',
-                connected: _jira?.isConnected ?? false,
-                statusText: (_jira?.isConnected ?? false)
-                    ? 'Connected as ${_jira?.savedDisplayName ?? _jira?.email}'
-                    : 'Not connected',
-                onTap: _jira == null ? null : _openJira,
+                subtitle: 'Tap to check your Atlassian connection',
+                onTap: () => _openJira(context),
               ),
               const SizedBox(height: 12),
               _ConnectionCard(
                 icon: Icons.account_circle_outlined,
-                title: 'Google session',
-                connected: _google?.hasSavedToken ?? false,
-                statusText: (_google?.hasSavedToken ?? false)
-                    ? 'Token saved — tap to re-check'
-                    : 'No session checked yet',
-                onTap: _google == null ? null : _openGoogle,
+                title: 'Google',
+                subtitle: 'Tap to check your Google session',
+                onTap: () => _openGoogle(context),
               ),
             ],
           ),
@@ -151,16 +146,14 @@ class _ConnectionCard extends StatelessWidget {
   const _ConnectionCard({
     required this.icon,
     required this.title,
-    required this.connected,
-    required this.statusText,
+    required this.subtitle,
     required this.onTap,
   });
 
   final IconData icon;
   final String title;
-  final bool connected;
-  final String statusText;
-  final VoidCallback? onTap;
+  final String subtitle;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -174,17 +167,7 @@ class _ConnectionCard extends StatelessWidget {
           child: Icon(icon, color: theme.colorScheme.onSecondaryContainer),
         ),
         title: Text(title, style: theme.textTheme.titleMedium),
-        subtitle: Row(
-          children: [
-            Icon(
-              connected ? Icons.circle : Icons.circle_outlined,
-              size: 10,
-              color: connected ? Colors.green.shade600 : theme.colorScheme.outline,
-            ),
-            const SizedBox(width: 6),
-            Expanded(child: Text(statusText)),
-          ],
-        ),
+        subtitle: Text(subtitle),
         trailing: const Icon(Icons.chevron_right),
         onTap: onTap,
       ),

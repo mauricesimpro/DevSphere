@@ -17,23 +17,28 @@ codebase.
 - **Remembers you** — your name is persisted locally (via `shared_preferences`),
   so subsequent launches skip setup and go straight to the greeting.
 - **Sign out** — clears the stored config and returns you to setup.
-- **Jira connect login** — enter your Jira site URL, email, and an API token;
-  DevSphere verifies them against Jira's `/rest/api/3/myself` and remembers the
-  connection (with a disconnect option).
-- **Google session checker** — paste a Google OAuth access token and DevSphere
-  validates it against Google's tokeninfo endpoint, reporting the account,
-  scopes, and time remaining.
-- **Cross-platform** — same code builds for desktop, web, and mobile.
+- **Jira connection check (zero token)** — rides your local **Claude CLI**:
+  DevSphere shells out to `claude`, which calls the Atlassian `atlassianUserInfo`
+  MCP tool and returns your connected account. No Jira token is stored or entered.
+- **Google connection check (zero token)** — same pattern: `claude` uses your
+  Google connector (Calendar/Gmail) to report the signed-in account.
+- **Cross-platform** — the app builds for desktop, web, and mobile.
 
-> Note: the Jira check calls the Atlassian REST API directly. On the **web**
-> build this can be blocked by Atlassian's CORS policy; it works from the
-> desktop/mobile builds. The Google check works everywhere.
+> **How the connection checks work:** DevSphere never holds Jira/Google tokens.
+> It asks your authenticated `claude` CLI to make the call through its MCP
+> connectors and parses the JSON result — the same approach as the earlier
+> dev-dashboard app. This means the checks are **desktop-only** (they need the
+> `claude` CLI installed and signed in) and do **not** run in the web build.
 
 ---
 
 ## Requirements
 
 - [Flutter](https://docs.flutter.dev/get-started/install) 3.47+ (Dart 3.13+).
+- For the connection checks: [Claude Code](https://claude.com/claude-code) (the
+  `claude` CLI) installed, signed in, and on your `PATH`, with the Atlassian /
+  Google MCP connectors authorized. Without it the app still runs — only the
+  Jira/Google checks report "not connected".
 
 Check your setup with:
 
@@ -144,13 +149,13 @@ lib/
   main.dart                     App entry; routes to setup vs. welcome
   services/
     app_config.dart             Load / save / reset the saved name
-    jira_service.dart           Jira connect/verify/disconnect + persistence
-    google_auth_service.dart    Validate a Google token (tokeninfo)
+    claude_cli_service.dart     Shells out to the `claude` CLI, parses JSON
+    jira_service.dart           Jira check via atlassianUserInfo (no token)
+    google_auth_service.dart    Google check via Calendar/Gmail (no token)
   screens/
     setup_screen.dart           First-run form
     welcome_screen.dart         "Hi {name}" dashboard + Sign out
-    jira_connect_screen.dart    Jira login form / connected view
-    google_session_screen.dart  Google session checker
+    connection_check_screen.dart  Runs a check, shows account or error
 resources/
   devsphere.svg                 App icon
 install.sh                      Build + install (or --uninstall) on Linux
@@ -161,10 +166,13 @@ test/
 
 ---
 
-## How persistence works
+## Persistence & secrets
 
-Configuration is stored with
-[`shared_preferences`](https://pub.dev/packages/shared_preferences), which uses
-the native key-value store on each platform (e.g. a config file on Linux desktop,
-`localStorage` on web). `AppConfig` is the single place that reads and writes it:
-`setName()` on setup, `reset()` on sign out.
+Only one, non-secret thing is persisted: your **name**, via
+[`shared_preferences`](https://pub.dev/packages/shared_preferences) (a config
+file on Linux desktop, `localStorage` on web). `AppConfig` is the single place
+that reads/writes it — `setName()` on setup, `reset()` on sign out.
+
+**No Jira or Google tokens are ever stored, entered, or handled by DevSphere.**
+The connection checks delegate entirely to your `claude` CLI, which owns its own
+MCP connector auth. That keeps credentials out of the app completely.
